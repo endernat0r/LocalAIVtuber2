@@ -29,7 +29,7 @@ export default function TTSPage() {
         <TextInputPreview />
 
         {/* Provider Selection */}
-        <Card>
+        <Card className="gap-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
@@ -37,7 +37,7 @@ export default function TTSPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <SettingDropdown id="tts-provider" options={{ "gpt-sovits": "GPT-SoVITS", "rvc": "RVC (Retrieval-based-Voice-Conversion)" }} onValueChange={handleProviderChange} />
+            <SettingDropdown id="tts-provider" defaultValue="gpt-sovits" options={{ "gpt-sovits": "GPT-SoVITS", "rvc": "RVC (Retrieval-based-Voice-Conversion)" }} onValueChange={handleProviderChange} />
           </CardContent>
         </Card>
 

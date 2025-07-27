@@ -12,11 +12,13 @@ export class TTSManager {
     private currentAudio: HTMLAudioElement | null = null;
     private isProcessing: boolean = false;
     private isPlaying: boolean = false;
-    private selectedProvider: TTSProvider = "gpt-sovits";
+    private selectedProvider: TTSProvider;
     private subscribers: Set<TTSUpdateCallback> = new Set();
     private providers: Record<TTSProvider, BaseTTSProvider>;
 
     constructor() {
+        // Initialize with a temporary value, will be updated when settings are loaded
+        this.selectedProvider = "gpt-sovits";
         this.providers = {
             "gpt-sovits": new GPTSoVITSProvider(),
             "rvc": new RVCProvider()
