@@ -34,6 +34,8 @@ import mss
 import traceback
 import threading
 import queue
+import httpx
+from fastapi.middleware.cors import CORSMiddleware
 
 # Download progress tracking
 download_progress = {}
@@ -41,6 +43,73 @@ download_progress = {}
 # Show import completion immediately after imports
 import_time = time.time() - start_time
 startup_progress.complete_step(f"Imports completed in {import_time:.2f}s")
+
+# Initialize RVC server process and related variables
+rvc_process = None
+rvc_log_queue = queue.Queue()
+rvc_server_port = 8001  # Different port from main server
+rvc_server_ready = threading.Event()  # Add event for server readiness
+
+# Start RVC server during initialization
+start_time = time.time()
+startup_progress.show_step("Starting RVC Server")
+
+try:
+    # Get the path to the RVC server venv python
+    rvc_dir = os.path.join(os.path.dirname(__file__), "plugins", "rvc")
+    rvc_venv_python = os.path.join(rvc_dir, "venv", "Scripts", "python.exe")
+    rvc_server_script = os.path.join(rvc_dir, "rvc_server.py")
+    
+    if not os.path.exists(rvc_venv_python):
+        startup_progress.complete_step(f"RVC server startup failed - virtual environment not found in {time.time() - start_time:.2f}s")
+    elif not os.path.exists(rvc_server_script):
+        startup_progress.complete_step(f"RVC server startup failed - server script not found in {time.time() - start_time:.2f}s")
+    else:
+        # Clear the ready event before starting    
+        rvc_server_ready.clear()
+            
+        # Start the RVC server process
+        rvc_process = subprocess.Popen(
+            [rvc_venv_python, rvc_server_script],
+            cwd=rvc_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Start threads to read stdout and stderr
+        def read_output(pipe, prefix):
+            try:
+                for line in pipe:
+                    log_line = f"{prefix}: {line.strip()}"
+                    rvc_log_queue.put(log_line)
+                    logger.info(log_line)
+                    
+                    # Check for server ready message
+                    if "Uvicorn running on" in line:
+                        rvc_server_ready.set()
+            except Exception as e:
+                logger.error(f"Error reading RVC server {prefix}: {e}")
+                
+        threading.Thread(target=read_output, args=(rvc_process.stdout, "RVC"), daemon=True).start()
+        threading.Thread(target=read_output, args=(rvc_process.stderr, "RVC"), daemon=True).start()
+        
+        # Wait for server to be ready with a timeout
+        if rvc_server_ready.wait(timeout=30):  # Wait up to 30 seconds
+            startup_progress.complete_step(f"RVC server started successfully in {time.time() - start_time:.2f}s")
+        else:
+            # If timeout occurs, stop the server
+            try:
+                rvc_process.terminate()
+                rvc_process = None
+            except:
+                pass
+            startup_progress.complete_step(f"RVC server failed to start within timeout period in {time.time() - start_time:.2f}s")
+except Exception as e:
+    logger.error(f"Error starting RVC server: {e}")
+    startup_progress.complete_step(f"RVC server startup failed with error in {time.time() - start_time:.2f}s")
 
 app = FastAPI()
 static_files_path = os.path.abspath("../frontend/dist")
@@ -1093,75 +1162,44 @@ async def query_memory_context(request: QueryContextRequest):
 rvc_process = None
 rvc_log_queue = queue.Queue()
 rvc_server_port = 8001  # Different port from main server
+rvc_server_ready = threading.Event()  # Add event for server readiness
 
-@app.post("/api/rvc/start")
-def start_rvc_server():
-    """Start the RVC server process"""
-    global rvc_process
-    try:
-        if rvc_process is not None:
-            return False, "RVC server is already running"
-            
-        # Get the path to the RVC server venv python
-        rvc_dir = os.path.join(os.path.dirname(__file__), "plugins", "rvc")
-        rvc_venv_python = os.path.join(rvc_dir, "venv", "Scripts", "python.exe")
-        rvc_server_script = os.path.join(rvc_dir, "rvc_server.py")
+@app.middleware("http")
+async def rvc_proxy_middleware(request: Request, call_next):
+    """Proxy all /api/rvc/* requests to the RVC server"""
+    if request.url.path.startswith("/api/rvc/"):
+        # Strip /api/rvc prefix and forward to RVC server
+        path = request.url.path.replace("/api/rvc", "", 1)
+        rvc_url = f"http://localhost:{rvc_server_port}{path}"
         
-        if not os.path.exists(rvc_venv_python):
-            return False, "RVC server virtual environment not found"
-            
-        if not os.path.exists(rvc_server_script):
-            return False, "RVC server script not found"
-            
-        # Start the RVC server process
-        rvc_process = subprocess.Popen(
-            [rvc_venv_python, rvc_server_script],
-            cwd=rvc_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
-        )
-        
-        # Start threads to read stdout and stderr
-        def read_output(pipe, prefix):
+        async with httpx.AsyncClient() as client:
             try:
-                for line in pipe:
-                    log_line = f"{prefix}: {line.strip()}"
-                    rvc_log_queue.put(log_line)
-                    logger.info(log_line)
-            except Exception as e:
-                logger.error(f"Error reading RVC server {prefix}: {e}")
+                # Forward the request with same method, body, and headers
+                body = await request.body()
+                headers = {k: v for k, v in request.headers.items() 
+                         if k.lower() not in ["host", "content-length"]}
                 
-        threading.Thread(target=read_output, args=(rvc_process.stdout, "RVC"), daemon=True).start()
-        threading.Thread(target=read_output, args=(rvc_process.stderr, "RVC ERROR"), daemon=True).start()
-        
-        return True, "RVC server started successfully"
-    except Exception as e:
-        logger.error(f"Error starting RVC server: {e}")
-        return False, f"Failed to start RVC server: {str(e)}"
-
-@app.post("/api/rvc/stop")
-def stop_rvc_server():
-    """Stop the RVC server process"""
-    global rvc_process
-    try:
-        if rvc_process is None:
-            return False, "RVC server is not running"
-            
-        # Terminate the process
-        rvc_process.terminate()
-        try:
-            rvc_process.wait(timeout=5)  # Wait up to 5 seconds for graceful shutdown
-        except subprocess.TimeoutExpired:
-            rvc_process.kill()  # Force kill if not shut down
-            
-        rvc_process = None
-        return True, "RVC server stopped successfully"
-    except Exception as e:
-        logger.error(f"Error stopping RVC server: {e}")
-        return False, f"Failed to stop RVC server: {str(e)}"
+                response = await client.request(
+                    method=request.method,
+                    url=rvc_url,
+                    content=body,
+                    headers=headers,
+                    params=request.query_params
+                )
+                
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    media_type=response.headers.get("content-type")
+                )
+            except Exception as e:
+                logger.error(f"Error proxying RVC request: {e}")
+                return JSONResponse(
+                    status_code=502,
+                    content={"detail": "RVC server not available"}
+                )
+    
+    return await call_next(request)
 
 
 if __name__ == "__main__":

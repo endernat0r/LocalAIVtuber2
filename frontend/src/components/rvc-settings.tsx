@@ -1,26 +1,35 @@
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Power } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+
+interface RvcModel {
+    name: string;
+    model_path: string;
+    index_path: string | null;
+}
 
 export default function RvcSettings() {
     // RVC specific states
     const [rvcModels, setRvcModels] = useState<string[]>([])
     const [selectedRvcModel, setSelectedRvcModel] = useState<string>("")
     const [isRvcServerRunning, setIsRvcServerRunning] = useState(false)
-    const [isStartingServer, setIsStartingServer] = useState(false)
+    const [edgeModels, setEdgeModels] = useState<string[]>([])
+    const [selectedEdgeModel, setSelectedEdgeModel] = useState<string>("")
 
     useEffect(() => {
         checkRvcServerStatus()
         fetchRvcModels()
+        fetchEdgeModels()
+
+        // Poll server status every 5 seconds
+        // const interval = setInterval(checkRvcServerStatus, 5000)
+        // return () => clearInterval(interval)
     }, [])
 
     const checkRvcServerStatus = async () => {
         try {
-            const response = await fetch('http://localhost:8001/status')
+            const response = await fetch('/api/rvc/status')
             const data = await response.json()
             setIsRvcServerRunning(data.running)
         } catch (error) {
@@ -31,9 +40,9 @@ export default function RvcSettings() {
 
     const fetchRvcModels = async () => {
         try {
-            const response = await fetch('http://localhost:8001/models')
+            const response = await fetch('/api/rvc/models')
             const data = await response.json()
-            setRvcModels(data.models || [])
+            setRvcModels(data.models.map((model: RvcModel) => model.name) || [])
             if (data.current_model) {
                 setSelectedRvcModel(data.current_model)
             }
@@ -42,32 +51,19 @@ export default function RvcSettings() {
         }
     }
 
-    const toggleRvcServer = async () => {
-        setIsStartingServer(true)
+    const fetchEdgeModels = async () => {
         try {
-            const endpoint = isRvcServerRunning ? '/api/rvc/stop' : '/api/rvc/start'
-            const response = await fetch(endpoint, { method: 'POST' })
+            const response = await fetch('/api/rvc/edge-models')
             const data = await response.json()
-
-            if (response.ok) {
-                setIsRvcServerRunning(!isRvcServerRunning)
-                if (!isRvcServerRunning) {
-                    // If we just started the server, fetch models
-                    await fetchRvcModels()
-                }
-            } else {
-                console.error(data.error || 'Failed to toggle RVC server')
-            }
+            setEdgeModels(data.models || [])
         } catch (error) {
-            console.error('Failed to toggle RVC server:', error)
-        } finally {
-            setIsStartingServer(false)
+            console.error('Failed to fetch Edge TTS models:', error)
         }
     }
 
     const handleRvcModelChange = async (modelName: string) => {
         try {
-            const response = await fetch(`/api/rvc/server/load_model/${modelName}`, {
+            const response = await fetch(`/api/rvc/load_model/${modelName}`, {
                 method: 'POST'
             })
             const data = await response.json()
@@ -80,52 +76,58 @@ export default function RvcSettings() {
             console.error('Failed to load RVC model:', error)
         }
     }
+
     return (
         <div className="space-y-2">
             <Card>
-                <CardHeader>
-                    <CardTitle>RVC Settings</CardTitle>
-                    <CardDescription>Configure Real-time Voice Conversion parameters</CardDescription>
-                </CardHeader>
+                {/* <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                        RVC Settings
+                        <Badge variant={isRvcServerRunning ? "default" : "destructive"}>
+                            {isRvcServerRunning ? "Server Running" : "Server Not Running"}
+                        </Badge>
+                    </CardTitle>
+                </CardHeader> */}
                 <CardContent className="space-y-6">
-                    {/* Server Control */}
-                    <div className="flex items-center justify-between">
-                        <Label>RVC Server Status</Label>
-                        <Button
-                            variant={isRvcServerRunning ? "destructive" : "default"}
-                            onClick={toggleRvcServer}
-                            disabled={isStartingServer}
-                        >
-                            {isStartingServer ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <>
-                                    <Power className="h-4 w-4 mr-2" />
-                                    {isRvcServerRunning ? "Stop Server" : "Start Server"}
-                                </>
-                            )}
-                        </Button>
-                    </div>
+                    {isRvcServerRunning && (
+                        <>
+                            <Label>RVC Model</Label>
+                            <Select
+                                value={selectedRvcModel}
+                                onValueChange={handleRvcModelChange}
+                            >
+                                <SelectTrigger className="w-40">
+                                    <SelectValue placeholder="Select RVC Model" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {rvcModels.map((model) => (
+                                        <SelectItem key={model} value={model}>
+                                            {model}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
 
-                    <Label>RVC Model</Label>
-                    <Select
-                        value={selectedRvcModel}
-                        onValueChange={handleRvcModelChange}
-                    >
-                        <SelectTrigger className="w-40">
-                            <SelectValue placeholder="Select RVC Model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {rvcModels.map((model) => (
-                                <SelectItem key={model} value={model}>
-                                    {model}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                            <Label>Edge TTS Model</Label>
+                            <Select
+                                value={selectedEdgeModel}
+                                onValueChange={setSelectedEdgeModel}
+                            >
+                                <SelectTrigger className="w-40">
+                                    <SelectValue placeholder="Select Edge TTS Model" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {edgeModels.map((model) => (
+                                        <SelectItem key={model} value={model}>
+                                            {model}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </>
+                    )}
                 </CardContent>
             </Card>
-
         </div>
     )
 }

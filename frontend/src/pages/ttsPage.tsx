@@ -66,12 +66,13 @@ export default function TTSPage() {
 
     if (selectedProvider === "rvc") {
       // Use RVC endpoint
-      const response = await fetch("http://localhost:8001/convert", {
+      const response = await fetch("/api/rvc/convert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          voice: "en-US-AriaNeural"
+          voice: "en-US-AriaNeural",
+          model_name: "qiqigenshin"
         }),
         signal: abortController.signal
       })
@@ -271,7 +272,7 @@ export default function TTSPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="gpt-sovits">GPT-SoVITS</SelectItem>
-                <SelectItem value="rvc">RVC (Real-time Voice Conversion)</SelectItem>
+                <SelectItem value="rvc">RVC (Retrieval-based-Voice-Conversion)</SelectItem>
               </SelectContent>
             </Select>
           </CardContent>

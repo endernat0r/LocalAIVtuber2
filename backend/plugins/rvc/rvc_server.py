@@ -5,8 +5,10 @@ import json
 from typing import Optional, List, Dict
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import edge_tts
+from edge_tts_voices import SUPPORTED_VOICES
 import asyncio
 import soundfile as sf
 import tempfile
@@ -17,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Get current directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +83,14 @@ def get_available_models() -> List[Dict[str, str]]:
                     })
     return models
 
+def get_available_edge_models() -> List[Dict[str, str]]:
+    return list(SUPPORTED_VOICES.keys())
+
+@app.get("/status")
+async def get_status():
+    """Get RVC server status"""
+    return JSONResponse(content={"running": True})
+
 @app.get("/models")
 async def list_models():
     """List available RVC models"""
@@ -83,6 +102,18 @@ async def list_models():
         })
     except Exception as e:
         logger.error(f"Error listing models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/edge-models")
+async def list_edge_models():
+    """List available Edge TTS models"""
+    try:
+        models = get_available_edge_models()
+        return JSONResponse(content={
+            "models": models
+        })
+    except Exception as e:
+        logger.error(f"Error listing Edge TTS models: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/load_model/{model_name}")
