@@ -6,6 +6,12 @@ interface RVCModel {
     index_path: string | null;
 }
 
+interface DownloadModelResponse {
+    message: string;
+    model_name: string;
+    has_index: boolean;
+}
+
 type RVCStateUpdateCallback = () => void;
 
 export class RVCProvider extends BaseTTSProvider {
@@ -14,6 +20,8 @@ export class RVCProvider extends BaseTTSProvider {
     private voices: string[] = [];
     private edgeVoices: string[] = [];
     private subscribers = new Set<RVCStateUpdateCallback>();
+    private useRVC: boolean = true;
+    private f0_up_key: number = 0;
 
     constructor() {
         super();
@@ -64,6 +72,16 @@ export class RVCProvider extends BaseTTSProvider {
         return this.currentEdgeVoice;
     }
 
+    setUseRVC(value: boolean): void {
+        this.useRVC = value;
+        this.notifySubscribers();
+    }
+
+    setF0UpKey(value: number): void {
+        this.f0_up_key = value;
+        this.notifySubscribers();
+    }
+
     async setVoice(voice: string): Promise<void> {
         const response = await fetch(`/api/rvc/load_model/${voice}`, {
             method: 'POST'
@@ -94,7 +112,9 @@ export class RVCProvider extends BaseTTSProvider {
             body: JSON.stringify({
                 text,
                 voice: this.currentEdgeVoice,
-                model_name: this.currentVoice
+                model_name: this.currentVoice,
+                use_rvc: this.useRVC,
+                f0_up_key: this.f0_up_key
             })
         });
 
@@ -103,5 +123,25 @@ export class RVCProvider extends BaseTTSProvider {
         }
 
         return response;
+    }
+
+    async downloadModel(url: string): Promise<DownloadModelResponse> {
+        const response = await fetch("/api/rvc/download_model", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to download model');
+        }
+
+        const data = await response.json();
+        
+        // Refresh the voice list after successful download
+        await this.fetchVoices();
+        
+        return data;
     }
 }

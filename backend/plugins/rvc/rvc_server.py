@@ -6,12 +6,16 @@ from typing import Optional, List, Dict
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 import edge_tts
 from edge_tts_voices import SUPPORTED_VOICES
 import asyncio
 import soundfile as sf
 import tempfile
+import requests
+import zipfile
+from urllib.parse import urlparse, unquote
+import shutil
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -50,7 +54,8 @@ class TTSRequest(BaseModel):
     voice: str = "en-US-AriaNeural"
     pitch: str = "+0Hz"
     rate: str = "+0%"
-    model_name: Optional[str] = None  # If provided, will run RVC after TTS
+    use_rvc: bool = False  # New parameter to explicitly control RVC usage
+    model_name: Optional[str] = None  # Model name is now optional regardless of RVC usage
     f0_up_key: int = 0
     f0_method: str = "rmvpe"
     index_rate: float = 0.75
@@ -58,6 +63,9 @@ class TTSRequest(BaseModel):
     resample_sr: int = 0
     rms_mix_rate: float = 0.25
     protect: float = 0.33
+
+class ModelDownloadRequest(BaseModel):
+    url: HttpUrl
 
 def get_available_models() -> List[Dict[str, str]]:
     """Get list of available RVC models"""
@@ -159,13 +167,17 @@ async def convert_text(request: TTSRequest):
         # Save TTS output
         await communicate.save(tts_output)
         
-        # If no RVC model requested, return TTS output directly
-        if not request.model_name:
+        # If RVC is not requested, return TTS output directly
+        if not request.use_rvc:
             return FileResponse(
                 tts_output,
                 media_type="audio/wav",
                 filename="output.wav"
             )
+            
+        # Validate RVC parameters
+        if not request.model_name:
+            raise HTTPException(status_code=400, detail="model_name is required when use_rvc is True")
             
         # Load RVC model if needed
         if current_model != request.model_name:
@@ -199,6 +211,82 @@ async def convert_text(request: TTSRequest):
         raise
     except Exception as e:
         logger.error(f"Error converting voice: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/download_model")
+async def download_model(request: ModelDownloadRequest):
+    """Download and setup an RVC model from a URL"""
+    try:
+        # Extract filename from URL
+        parsed_url = urlparse(str(request.url))
+        filename = unquote(os.path.basename(parsed_url.path))
+        if not filename.endswith('.zip'):
+            raise HTTPException(status_code=400, detail="URL must point to a zip file")
+            
+        # Remove .zip extension to get model name
+        model_name = os.path.splitext(filename)[0]
+        model_dir = os.path.join(models_dir, model_name)
+        
+        # Create temporary directory for download
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, filename)
+            
+            # Download the file
+            logger.info(f"Downloading model from {request.url}")
+            response = requests.get(str(request.url), stream=True)
+            response.raise_for_status()
+            
+            # Save to temporary file
+            with open(zip_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    
+            # Verify it's a valid zip file
+            if not zipfile.is_zipfile(zip_path):
+                raise HTTPException(status_code=400, detail="Downloaded file is not a valid zip file")
+                
+            # Remove existing model directory if it exists
+            if os.path.exists(model_dir):
+                shutil.rmtree(model_dir)
+                
+            # Create model directory
+            os.makedirs(model_dir)
+            
+            # Extract zip file
+            logger.info(f"Extracting model to {model_dir}")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(model_dir)
+                
+            # Verify required files exist
+            has_pth = False
+            has_index = False
+            for root, _, files in os.walk(model_dir):
+                for file in files:
+                    if file.endswith('.pth'):
+                        has_pth = True
+                    elif file.endswith('.index'):
+                        has_index = True
+                    if has_pth and has_index:
+                        break
+                        
+            if not has_pth:
+                shutil.rmtree(model_dir)
+                raise HTTPException(status_code=400, detail="No .pth file found in zip")
+                
+            return JSONResponse(content={
+                "message": f"Model '{model_name}' downloaded and extracted successfully",
+                "model_name": model_name,
+                "has_index": has_index
+            })
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error downloading model: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download model: {str(e)}")
+    except zipfile.BadZipFile:
+        logger.error("Invalid zip file")
+        raise HTTPException(status_code=400, detail="Invalid zip file")
+    except Exception as e:
+        logger.error(f"Error processing model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

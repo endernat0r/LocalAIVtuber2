@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator"
 import { Download, Mic, Volume2 } from "lucide-react"
 import AudioPlayer from "@/components/audio-player"
 import { ttsManager } from "@/lib/ttsManager"
+import { toast } from "sonner"
 
 export function TextInputPreview() {
   const [text, setText] = useState("")
@@ -26,7 +27,7 @@ export function TextInputPreview() {
       audio.play()
     } catch (error) {
       console.error("Error fetching TTS audio:", error)
-      alert("Failed to generate audio. Please try again.")
+      toast.error("Failed to generate audio. Please try again.")
     } finally {
       setIsGenerating(false)
     }
