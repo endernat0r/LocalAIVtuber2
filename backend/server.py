@@ -19,6 +19,8 @@ import os
 import requests
 import aiofiles
 import aiohttp
+import subprocess
+import sys
 from fastapi import FastAPI, Query, Request, Response, WebSocket, HTTPException, File, UploadFile, Form
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +32,8 @@ import json
 from typing import Any, Dict, List
 import mss
 import traceback
+import threading
+import queue
 
 # Download progress tracking
 download_progress = {}
@@ -1084,6 +1088,81 @@ async def query_memory_context(request: QueryContextRequest):
     except Exception as e:
         logger.error(f"Error querying memory context: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": "Failed to query memory context"})
+
+# RVC Server process management
+rvc_process = None
+rvc_log_queue = queue.Queue()
+rvc_server_port = 8001  # Different port from main server
+
+@app.post("/api/rvc/start")
+def start_rvc_server():
+    """Start the RVC server process"""
+    global rvc_process
+    try:
+        if rvc_process is not None:
+            return False, "RVC server is already running"
+            
+        # Get the path to the RVC server venv python
+        rvc_dir = os.path.join(os.path.dirname(__file__), "plugins", "rvc")
+        rvc_venv_python = os.path.join(rvc_dir, "venv", "Scripts", "python.exe")
+        rvc_server_script = os.path.join(rvc_dir, "rvc_server.py")
+        
+        if not os.path.exists(rvc_venv_python):
+            return False, "RVC server virtual environment not found"
+            
+        if not os.path.exists(rvc_server_script):
+            return False, "RVC server script not found"
+            
+        # Start the RVC server process
+        rvc_process = subprocess.Popen(
+            [rvc_venv_python, rvc_server_script],
+            cwd=rvc_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Start threads to read stdout and stderr
+        def read_output(pipe, prefix):
+            try:
+                for line in pipe:
+                    log_line = f"{prefix}: {line.strip()}"
+                    rvc_log_queue.put(log_line)
+                    logger.info(log_line)
+            except Exception as e:
+                logger.error(f"Error reading RVC server {prefix}: {e}")
+                
+        threading.Thread(target=read_output, args=(rvc_process.stdout, "RVC"), daemon=True).start()
+        threading.Thread(target=read_output, args=(rvc_process.stderr, "RVC ERROR"), daemon=True).start()
+        
+        return True, "RVC server started successfully"
+    except Exception as e:
+        logger.error(f"Error starting RVC server: {e}")
+        return False, f"Failed to start RVC server: {str(e)}"
+
+@app.post("/api/rvc/stop")
+def stop_rvc_server():
+    """Stop the RVC server process"""
+    global rvc_process
+    try:
+        if rvc_process is None:
+            return False, "RVC server is not running"
+            
+        # Terminate the process
+        rvc_process.terminate()
+        try:
+            rvc_process.wait(timeout=5)  # Wait up to 5 seconds for graceful shutdown
+        except subprocess.TimeoutExpired:
+            rvc_process.kill()  # Force kill if not shut down
+            
+        rvc_process = None
+        return True, "RVC server stopped successfully"
+    except Exception as e:
+        logger.error(f"Error stopping RVC server: {e}")
+        return False, f"Failed to stop RVC server: {str(e)}"
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="localhost", port=8000)
