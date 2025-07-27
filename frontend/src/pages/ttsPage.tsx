@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Settings } from "lucide-react"
 import RvcSettings from "@/components/rvc-settings"
 import GptSovitsSettings from "@/components/gptsovits-settings"
 import { TextInputPreview } from "@/components/text-input-preview"
 import { ttsManager } from "@/lib/ttsManager"
+import SettingDropdown from "@/components/setting-dropdown"
 
 type TTSProvider = "gpt-sovits" | "rvc"
 
@@ -19,9 +19,8 @@ export default function TTSPage() {
     return unsubscribe
   }, [])
 
-  const handleProviderChange = (value: TTSProvider) => {
-    setSelectedProvider(value)
-    ttsManager.setSelectedProvider(value)
+  const handleProviderChange = async (value: string) => {
+    await ttsManager.setSelectedProvider(value as TTSProvider)
   }
 
   return (
@@ -38,15 +37,7 @@ export default function TTSPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Select value={selectedProvider} onValueChange={handleProviderChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select TTS Provider" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gpt-sovits">GPT-SoVITS</SelectItem>
-                <SelectItem value="rvc">RVC (Retrieval-based-Voice-Conversion)</SelectItem>
-              </SelectContent>
-            </Select>
+            <SettingDropdown id="tts-provider" options={{ "gpt-sovits": "GPT-SoVITS", "rvc": "RVC (Retrieval-based-Voice-Conversion)" }} onValueChange={handleProviderChange} />
           </CardContent>
         </Card>
 
