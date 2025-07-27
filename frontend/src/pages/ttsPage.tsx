@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -7,10 +7,9 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Download, Settings, Mic, Volume2 } from "lucide-react"
 import AudioPlayer from "@/components/audio-player"
-import { pipelineManager } from "@/lib/pipelineManager"
-import { globalStateManager } from "@/lib/globalStateManager"
 import RvcSettings from "@/components/rvc-settings"
 import GptSovitsSettings from "@/components/gptsovits-settings"
+import { ttsManager } from "@/lib/ttsManager"
 
 type TTSProvider = "gpt-sovits" | "rvc"
 
@@ -20,87 +19,6 @@ export default function TTSPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
 
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null)
-  const isProcessingRef = useRef(false)
-  const isPlayingRef = useRef(false)
-
-  useEffect(() => {
-    const handlePipelineUpdate = () => {
-      processNextTTS()
-      processNextAudio()
-    }
-
-    const unsubscribe = pipelineManager.subscribe(handlePipelineUpdate)
-    return () => {
-      unsubscribe()
-    }
-  }, [])
-
-  const analyzeAudio = (audio: HTMLAudioElement) => {
-    const audioContext = new AudioContext()
-    const source = audioContext.createMediaElementSource(audio)
-    const analyser = audioContext.createAnalyser()
-    analyser.fftSize = 256
-
-    const dataArray = new Uint8Array(analyser.frequencyBinCount)
-    source.connect(analyser)
-    analyser.connect(audioContext.destination)
-
-    const updateVolume = () => {
-      analyser.getByteFrequencyData(dataArray)
-      const avgVolume = dataArray.reduce((a, b) => a + b, 0)
-      const normalizedVolume = avgVolume / 15096
-      globalStateManager.updateState("ttsLiveVolume", normalizedVolume)
-      if (!audio.paused) {
-        requestAnimationFrame(updateVolume)
-      }
-    }
-
-    updateVolume()
-  }
-
-  const generateAudioFromText = async (text: string): Promise<string> => {
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
-
-    if (selectedProvider === "rvc") {
-      // Use RVC endpoint
-      const response = await fetch("/api/rvc/convert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          voice: "en-US-AriaNeural",
-          model_name: "qiqigenshin"
-        }),
-        signal: abortController.signal
-      })
-
-      if (!response.ok) {
-        throw new Error("RVC conversion failed")
-      }
-
-      const blob = await response.blob()
-      return URL.createObjectURL(blob)
-    } else {
-      // Use default TTS endpoint
-      const response = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: abortController.signal
-      })
-
-      if (!response.ok) {
-        throw new Error("TTS generation failed")
-      }
-
-      const blob = await response.blob()
-      return URL.createObjectURL(blob)
-    }
-  }
-
   const handleGenerate = async () => {
     if (!text.trim()) return
 
@@ -108,7 +26,7 @@ export default function TTSPage() {
     setAudioUrl(null)
 
     try {
-      const url = await generateAudioFromText(text)
+      const url = await ttsManager.generateAudioFromText(text, selectedProvider)
       setAudioUrl(url)
       const audio = new Audio(url)
       audio.play()
@@ -120,79 +38,12 @@ export default function TTSPage() {
     }
   }
 
-  const processNextTTS = async () => {
-    const currentTask = pipelineManager.getCurrentTask()
-    if (currentTask?.status == "pending_interruption" && !currentTask.interruptionState?.tts) {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
-      isProcessingRef.current = false
-      pipelineManager.markInterruptionState("tts")
-      return
-    }
-    
-    if (isProcessingRef.current) return
-
-    const next = pipelineManager.getNextTaskForTTS()
-    if (!next) return
-
-    const { taskId, responseIndex, task } = next
-    const textToSpeak = task.response[responseIndex].text
-
-    isProcessingRef.current = true
-
-    try {
-      const audioUrl = await generateAudioFromText(textToSpeak)
-      pipelineManager.addTTSAudio(taskId, responseIndex, audioUrl)
-      isProcessingRef.current = false
-    } catch (err) {
-      console.error("TTS pipeline error:", err)
-      isProcessingRef.current = false
-    }
-  }
-
-  const processNextAudio = async () => {
-    const currentTask = pipelineManager.getCurrentTask()
-    if (currentTask?.status == "pending_interruption" && !currentTask.interruptionState?.audio) {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current.currentTime = 0
-        currentAudioRef.current = null
-      }
-      isPlayingRef.current = false
-      pipelineManager.markInterruptionState("audio")
-      return
-    }
-
-    if (isPlayingRef.current) return
-
-    const next = pipelineManager.getNextTaskForAudio()
-    if (!next) return
-
-    const { taskId, responseIndex, task } = next
-
-    const audioUrl = task.response[responseIndex].audio
-    isPlayingRef.current = true
-
-    const audio = new Audio(audioUrl!)
-    currentAudioRef.current = audio
-    audio.play()
-    analyzeAudio(audio)
-
-    audio.onended = () => {
-      isPlayingRef.current = false
-      currentAudioRef.current = null
-      pipelineManager.markPlaybackFinished(taskId, responseIndex)
-    }
-  }
-
   const handleDownload = () => {
     if (!audioUrl) return
     
-    // Create an anchor element and trigger download
     const a = document.createElement('a')
     a.href = audioUrl
-    a.download = `tts-output-${Date.now()}.wav` // Give a unique filename
+    a.download = `tts-output-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
