@@ -1,5 +1,8 @@
 import { pipelineManager } from './pipelineManager';
 import { globalStateManager } from './globalStateManager';
+import { BaseTTSProvider } from './tts/baseTTSProvider';
+import { GPTSoVITSProvider } from './tts/gptsovitsProvider';
+import { RVCProvider } from './tts/rvcProvider';
 
 type TTSProvider = "gpt-sovits" | "rvc";
 type TTSUpdateCallback = () => void;
@@ -9,9 +12,15 @@ export class TTSManager {
     private currentAudio: HTMLAudioElement | null = null;
     private isProcessing: boolean = false;
     private isPlaying: boolean = false;
+    private selectedProvider: TTSProvider = "gpt-sovits";
     private subscribers: Set<TTSUpdateCallback> = new Set();
+    private providers: Record<TTSProvider, BaseTTSProvider>;
 
     constructor() {
+        this.providers = {
+            "gpt-sovits": new GPTSoVITSProvider(),
+            "rvc": new RVCProvider()
+        };
         this.setupPipelineSubscription();
     }
 
@@ -22,6 +31,19 @@ export class TTSManager {
 
     private notifySubscribers() {
         this.subscribers.forEach(callback => callback());
+    }
+
+    public getSelectedProvider(): TTSProvider {
+        return this.selectedProvider;
+    }
+
+    public setSelectedProvider(provider: TTSProvider) {
+        this.selectedProvider = provider;
+        this.notifySubscribers();
+    }
+
+    public getCurrentProviderInstance(): BaseTTSProvider {
+        return this.providers[this.selectedProvider];
     }
 
     private setupPipelineSubscription() {
@@ -54,43 +76,14 @@ export class TTSManager {
         updateVolume();
     }
 
-    public async generateAudioFromText(text: string, provider: TTSProvider = "gpt-sovits"): Promise<string> {
+    public async generateAudioFromText(text: string): Promise<string> {
         const abortController = new AbortController();
         this.abortController = abortController;
 
-        if (provider === "rvc") {
-            const response = await fetch("/api/rvc/convert", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    text,
-                    voice: "en-US-AriaNeural",
-                    model_name: "qiqigenshin"
-                }),
-                signal: abortController.signal
-            });
-
-            if (!response.ok) {
-                throw new Error("RVC conversion failed");
-            }
-
-            const blob = await response.blob();
-            return URL.createObjectURL(blob);
-        } else {
-            const response = await fetch("/api/tts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text }),
-                signal: abortController.signal
-            });
-
-            if (!response.ok) {
-                throw new Error("TTS generation failed");
-            }
-
-            const blob = await response.blob();
-            return URL.createObjectURL(blob);
-        }
+        const provider = this.getCurrentProviderInstance();
+        const response = await provider.generateAudio(text);
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
     }
 
     private async processNextTTS() {

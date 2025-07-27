@@ -2,130 +2,99 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-
-interface RvcModel {
-    name: string;
-    model_path: string;
-    index_path: string | null;
-}
+import { ttsManager } from "@/lib/ttsManager";
+import { RVCProvider } from "@/lib/tts/rvcProvider";
+import { TTSVoice } from "@/lib/tts/gptsovitsProvider";
 
 export default function RvcSettings() {
-    // RVC specific states
-    const [rvcModels, setRvcModels] = useState<string[]>([])
-    const [selectedRvcModel, setSelectedRvcModel] = useState<string>("")
-    const [isRvcServerRunning, setIsRvcServerRunning] = useState(false)
-    const [edgeModels, setEdgeModels] = useState<string[]>([])
-    const [selectedEdgeModel, setSelectedEdgeModel] = useState<string>("")
+    const [rvcModels, setRvcModels] = useState<TTSVoice[]>([])
+    const [selectedRvcModel, setSelectedRvcModel] = useState<string | null>(null)
+    const [edgeModels, setEdgeModels] = useState<TTSVoice[]>([])
+    const [selectedEdgeModel, setSelectedEdgeModel] = useState<string | null>(null)
+    const provider = ttsManager.getCurrentProviderInstance() as RVCProvider;
 
     useEffect(() => {
-        checkRvcServerStatus()
         fetchRvcModels()
         fetchEdgeModels()
-
-        // Poll server status every 5 seconds
-        // const interval = setInterval(checkRvcServerStatus, 5000)
-        // return () => clearInterval(interval)
     }, [])
-
-    const checkRvcServerStatus = async () => {
-        try {
-            const response = await fetch('/api/rvc/status')
-            const data = await response.json()
-            setIsRvcServerRunning(data.running)
-        } catch (error) {
-            console.error('Failed to check RVC server status:', error)
-            setIsRvcServerRunning(false)
-        }
-    }
 
     const fetchRvcModels = async () => {
         try {
-            const response = await fetch('/api/rvc/models')
-            const data = await response.json()
-            setRvcModels(data.models.map((model: RvcModel) => model.name) || [])
-            if (data.current_model) {
-                setSelectedRvcModel(data.current_model)
+            const models = await provider.getVoices();
+            setRvcModels(models);
+            const currentModel = provider.getCurrentVoice();
+            if (currentModel) {
+                setSelectedRvcModel(currentModel);
             }
         } catch (error) {
-            console.error('Failed to fetch RVC models:', error)
+            console.error('Failed to fetch RVC models:', error);
         }
     }
 
     const fetchEdgeModels = async () => {
         try {
-            const response = await fetch('/api/rvc/edge-models')
-            const data = await response.json()
-            setEdgeModels(data.models || [])
+            const models = await provider.getEdgeVoices();
+            setEdgeModels(models);
+            const currentEdgeVoice = provider.getCurrentEdgeVoice();
+            if (currentEdgeVoice) {
+                setSelectedEdgeModel(currentEdgeVoice);
+            }
         } catch (error) {
-            console.error('Failed to fetch Edge TTS models:', error)
+            console.error('Failed to fetch Edge TTS models:', error);
         }
     }
 
     const handleRvcModelChange = async (modelName: string) => {
         try {
-            const response = await fetch(`/api/rvc/load_model/${modelName}`, {
-                method: 'POST'
-            })
-            const data = await response.json()
-            if (response.ok) {
-                setSelectedRvcModel(modelName)
-            } else {
-                console.error(data.error || 'Failed to load RVC model')
-            }
+            await provider.setVoice(modelName);
+            setSelectedRvcModel(modelName);
         } catch (error) {
-            console.error('Failed to load RVC model:', error)
+            console.error('Failed to load RVC model:', error);
         }
+    }
+
+    const handleEdgeModelChange = (modelName: string) => {
+        provider.setEdgeVoice(modelName);
+        setSelectedEdgeModel(modelName);
     }
 
     return (
         <div className="space-y-2">
             <Card>
-                {/* <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                        RVC Settings
-                        <Badge variant={isRvcServerRunning ? "default" : "destructive"}>
-                            {isRvcServerRunning ? "Server Running" : "Server Not Running"}
-                        </Badge>
-                    </CardTitle>
-                </CardHeader> */}
                 <CardContent className="space-y-6">
-                    {isRvcServerRunning && (
-                        <>
-                            <Label>RVC Model</Label>
-                            <Select
-                                value={selectedRvcModel}
-                                onValueChange={handleRvcModelChange}
-                            >
-                                <SelectTrigger className="w-40">
-                                    <SelectValue placeholder="Select RVC Model" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {rvcModels.map((model) => (
-                                        <SelectItem key={model} value={model}>
-                                            {model}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                    <Label>RVC Model</Label>
+                    <Select
+                        value={selectedRvcModel || ''}
+                        onValueChange={handleRvcModelChange}
+                    >
+                        <SelectTrigger className="w-40">
+                            <SelectValue placeholder="Select RVC Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {rvcModels.map((model) => (
+                                <SelectItem key={model.name} value={model.name}>
+                                    {model.displayName || model.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
 
-                            <Label>Edge TTS Model</Label>
-                            <Select
-                                value={selectedEdgeModel}
-                                onValueChange={setSelectedEdgeModel}
-                            >
-                                <SelectTrigger className="w-40">
-                                    <SelectValue placeholder="Select Edge TTS Model" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {edgeModels.map((model) => (
-                                        <SelectItem key={model} value={model}>
-                                            {model}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </>
-                    )}
+                    <Label>Edge TTS Model</Label>
+                    <Select
+                        value={selectedEdgeModel || ''}
+                        onValueChange={handleEdgeModelChange}
+                    >
+                        <SelectTrigger className="w-40">
+                            <SelectValue placeholder="Select Edge TTS Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {edgeModels.map((model) => (
+                                <SelectItem key={model.name} value={model.name}>
+                                    {model.displayName || model.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </CardContent>
             </Card>
         </div>

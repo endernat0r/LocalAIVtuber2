@@ -1,112 +1,33 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import { Download, Settings, Mic, Volume2 } from "lucide-react"
-import AudioPlayer from "@/components/audio-player"
+import { Settings } from "lucide-react"
 import RvcSettings from "@/components/rvc-settings"
 import GptSovitsSettings from "@/components/gptsovits-settings"
+import { TextInputPreview } from "@/components/text-input-preview"
 import { ttsManager } from "@/lib/ttsManager"
 
 type TTSProvider = "gpt-sovits" | "rvc"
 
 export default function TTSPage() {
-  const [selectedProvider, setSelectedProvider] = useState<TTSProvider>("gpt-sovits")
-  const [text, setText] = useState("")
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState<TTSProvider>(ttsManager.getSelectedProvider())
 
-  const handleGenerate = async () => {
-    if (!text.trim()) return
+  useEffect(() => {
+    const unsubscribe = ttsManager.subscribe(() => {
+      setSelectedProvider(ttsManager.getSelectedProvider())
+    })
+    return unsubscribe
+  }, [])
 
-    setIsGenerating(true)
-    setAudioUrl(null)
-
-    try {
-      const url = await ttsManager.generateAudioFromText(text, selectedProvider)
-      setAudioUrl(url)
-      const audio = new Audio(url)
-      audio.play()
-    } catch (error) {
-      console.error("Error fetching TTS audio:", error)
-      alert("Failed to generate audio. Please try again.")
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const handleDownload = () => {
-    if (!audioUrl) return
-    
-    const a = document.createElement('a')
-    a.href = audioUrl
-    a.download = `tts-output-${Date.now()}.wav`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+  const handleProviderChange = (value: TTSProvider) => {
+    setSelectedProvider(value)
+    ttsManager.setSelectedProvider(value)
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br p-4">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Text Input and Preview Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mic className="h-5 w-5" />
-              Text Input & Preview
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="text-input">Text to synthesize</Label>
-              <Textarea
-                id="text-input"
-                placeholder="Enter the text you want to convert to speech..."
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="min-h-[120px] resize-none"
-              />
-              <div className="text-sm text-slate-500">{text.length} characters</div>
-            </div>
-
-            <Separator />
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button onClick={handleGenerate} disabled={!text.trim() || isGenerating} className="flex-1">
-                {isGenerating ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="h-4 w-4 mr-2" />
-                    Generate Speech
-                  </>
-                )}
-              </Button>
-
-              <Button variant="outline" disabled={!audioUrl} onClick={handleDownload}>
-                <Download className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {/* Audio Preview */}
-            <div className="bg-accent rounded-lg p-4">
-              {!audioUrl ? (
-                <div className="text-center ">
-                  Audio preview will appear here after generation
-                </div>
-              ) : (
-                <AudioPlayer audioUrl={audioUrl} />
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <TextInputPreview />
 
         {/* Provider Selection */}
         <Card>
@@ -117,7 +38,7 @@ export default function TTSPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Select value={selectedProvider} onValueChange={(value: TTSProvider) => setSelectedProvider(value)}>
+            <Select value={selectedProvider} onValueChange={handleProviderChange}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select TTS Provider" />
               </SelectTrigger>
