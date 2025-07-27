@@ -1,40 +1,24 @@
 import { useEffect, useRef, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Download, Settings, Mic, Volume2, Power, Loader2 } from "lucide-react"
+import { Download, Settings, Mic, Volume2 } from "lucide-react"
 import AudioPlayer from "@/components/audio-player"
 import { pipelineManager } from "@/lib/pipelineManager"
 import { globalStateManager } from "@/lib/globalStateManager"
-import { Slider } from "@/components/ui/slider"
+import RvcSettings from "@/components/rvc-settings"
+import GptSovitsSettings from "@/components/gptsovits-settings"
 
 type TTSProvider = "gpt-sovits" | "rvc"
-
-interface RVCModel {
-  name: string
-  model_path: string
-  index_path: string | null
-}
 
 export default function TTSPage() {
   const [selectedProvider, setSelectedProvider] = useState<TTSProvider>("gpt-sovits")
   const [text, setText] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [voices, setVoices] = useState<string[]>([])
-  const [selectedVoice, setSelectedVoice] = useState<string>("leaf")
-  
-  // RVC specific states
-  const [rvcModels, setRvcModels] = useState<RVCModel[]>([])
-  const [selectedRvcModel, setSelectedRvcModel] = useState<string>("")
-  const [isRvcServerRunning, setIsRvcServerRunning] = useState(false)
-  const [isStartingServer, setIsStartingServer] = useState(false)
-  const [f0UpKey, setF0UpKey] = useState(0)
-  const [indexRate, setIndexRate] = useState(0.75)
-  const [protect, setProtect] = useState(0.33)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -51,12 +35,6 @@ export default function TTSPage() {
     return () => {
       unsubscribe()
     }
-  }, [])
-
-  useEffect(() => {
-    fetchVoices()
-    checkRvcServerStatus()
-    fetchRvcModels()
   }, [])
 
   const analyzeAudio = (audio: HTMLAudioElement) => {
@@ -82,100 +60,6 @@ export default function TTSPage() {
     updateVolume()
   }
 
-  const fetchVoices = async () => {
-    const response = await fetch('/api/tts/voices')
-    const data = await response.json()
-    if (data.voices) {
-      setVoices(data.voices)
-      if (data.current_voice) {
-        setSelectedVoice(data.current_voice)
-      }
-    }
-  }
-
-  const handleVoiceChange = async (voice: string) => {
-    try {
-      const response = await fetch('/api/tts/change-voice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ voice_name: voice })
-      })
-      const data = await response.json()
-      if (response.ok) {
-        setSelectedVoice(voice)
-      } else {
-        console.error(data.error || 'Failed to change voice')
-      }
-    } catch (error) {
-      console.error('Failed to change voice:', error)
-    }
-  }
-
-  const checkRvcServerStatus = async () => {
-    // try {
-    //   const response = await fetch('/api/rvc/status')
-    //   const data = await response.json()
-    //   setIsRvcServerRunning(data.running)
-    // } catch (error) {
-    //   console.error('Failed to check RVC server status:', error)
-    //   setIsRvcServerRunning(false)
-    // }
-  }
-
-  const fetchRvcModels = async () => {
-    try {
-      const response = await fetch('http://localhost:8001/models')
-      const data = await response.json()
-      setRvcModels(data.models || [])
-      if (data.current_model) {
-        setSelectedRvcModel(data.current_model)
-      }
-    } catch (error) {
-      console.error('Failed to fetch RVC models:', error)
-    }
-  }
-
-  const toggleRvcServer = async () => {
-    setIsStartingServer(true)
-    try {
-      const endpoint = isRvcServerRunning ? '/api/rvc/stop' : '/api/rvc/start'
-      const response = await fetch(endpoint, { method: 'POST' })
-      const data = await response.json()
-      
-      if (response.ok) {
-        setIsRvcServerRunning(!isRvcServerRunning)
-        if (!isRvcServerRunning) {
-          // If we just started the server, fetch models
-          await fetchRvcModels()
-        }
-      } else {
-        console.error(data.error || 'Failed to toggle RVC server')
-      }
-    } catch (error) {
-      console.error('Failed to toggle RVC server:', error)
-    } finally {
-      setIsStartingServer(false)
-    }
-  }
-
-  const handleRvcModelChange = async (modelName: string) => {
-    try {
-      const response = await fetch(`/api/rvc/server/load_model/${modelName}`, {
-        method: 'POST'
-      })
-      const data = await response.json()
-      if (response.ok) {
-        setSelectedRvcModel(modelName)
-      } else {
-        console.error(data.error || 'Failed to load RVC model')
-      }
-    } catch (error) {
-      console.error('Failed to load RVC model:', error)
-    }
-  }
-
   const generateAudioFromText = async (text: string): Promise<string> => {
     const abortController = new AbortController()
     abortControllerRef.current = abortController
@@ -187,11 +71,7 @@ export default function TTSPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          voice: "en-US-AriaNeural",  // Default Edge TTS voice
-          model_name: selectedRvcModel,
-          f0_up_key: f0UpKey,
-          index_rate: indexRate,
-          protect: protect
+          voice: "en-US-AriaNeural"
         }),
         signal: abortController.signal
       })
@@ -398,129 +278,8 @@ export default function TTSPage() {
         </Card>
 
         {/* Provider-specific Settings */}
-        {selectedProvider === "gpt-sovits" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>GPT-SoVITS Settings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Voice Selection */}
-              <div className="space-y-2">
-                <Label>Voice Model</Label>
-                <Select value={selectedVoice} onValueChange={handleVoiceChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select Voice" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {voices.map((voice) => (
-                      <SelectItem key={voice} value={voice}>
-                        {voice}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {selectedProvider === "rvc" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>RVC Settings</CardTitle>
-              <CardDescription>Configure Real-time Voice Conversion parameters</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Server Control */}
-              <div className="flex items-center justify-between">
-                <Label>RVC Server Status</Label>
-                <Button 
-                  variant={isRvcServerRunning ? "destructive" : "default"}
-                  onClick={toggleRvcServer}
-                  disabled={isStartingServer}
-                >
-                  {isStartingServer ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Power className="h-4 w-4 mr-2" />
-                      {isRvcServerRunning ? "Stop Server" : "Start Server"}
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {/* Model Selection */}
-              <div className="space-y-2">
-                <Label>RVC Model</Label>
-                <Select 
-                  value={selectedRvcModel} 
-                  onValueChange={handleRvcModelChange}
-                  disabled={!isRvcServerRunning}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select RVC Model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rvcModels.map((model) => (
-                      <SelectItem key={model.name} value={model.name}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Voice Settings */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Pitch Shift (Semitones)</Label>
-                  <div className="flex items-center gap-4">
-                    <Slider
-                      value={[f0UpKey]}
-                      onValueChange={([value]) => setF0UpKey(value)}
-                      min={-12}
-                      max={12}
-                      step={1}
-                      disabled={!isRvcServerRunning}
-                    />
-                    <span className="min-w-[3ch] text-right">{f0UpKey}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Feature Matching Strength</Label>
-                  <div className="flex items-center gap-4">
-                    <Slider
-                      value={[indexRate]}
-                      onValueChange={([value]) => setIndexRate(value)}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      disabled={!isRvcServerRunning}
-                    />
-                    <span className="min-w-[3ch] text-right">{indexRate.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Protection Strength</Label>
-                  <div className="flex items-center gap-4">
-                    <Slider
-                      value={[protect]}
-                      onValueChange={([value]) => setProtect(value)}
-                      min={0}
-                      max={0.5}
-                      step={0.01}
-                      disabled={!isRvcServerRunning}
-                    />
-                    <span className="min-w-[3ch] text-right">{protect.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {selectedProvider === "gpt-sovits" && <GptSovitsSettings />}
+        {selectedProvider === "rvc" && <RvcSettings />}
       </div>
     </div>
   )
