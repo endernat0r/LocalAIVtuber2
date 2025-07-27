@@ -46,7 +46,7 @@ rvc_server_port = 8001  # Different port from main server
 
 # Start RVC server during initialization
 rvc_dir = os.path.join(os.path.dirname(__file__), "plugins", "rvc")
-rvc_venv_dir = os.path.join(rvc_dir, "venv")
+rvc_venv_dir = os.path.join(rvc_dir, ".venv")
 rvc_server_script = os.path.join(rvc_dir, "rvc_server.py")
 
 success, message = process_manager.start_server_process(

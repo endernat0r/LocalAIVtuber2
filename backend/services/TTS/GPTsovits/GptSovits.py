@@ -25,32 +25,23 @@ class GptSovits():
         config_path = os.path.join(current_module_directory, "GPT_SoVITS", "configs", "tts_infer.yaml")
         self.tts_config = TTS_Config(config_path)
         self.tts_pipeline = TTS_gptsovits(self.tts_config)
-        self.current_voice = "leaf"  # Default voice
+        
+        # Initialize empty state
         self.voice_files = {}
         self.prompt_texts = {}
         self.prompt_langs = {}
+        self.current_voice = None
+        self.ref_audio_path = None
+        self.prompt_text = None
+        self.prompt_lang = None
+        
+        # Update voice files and try to set default voice
         self._update_voice_files()
-        self.ref_audio_path = os.path.join(current_module_directory, "models", self.current_voice, self.voice_files[self.current_voice])
-        self.prompt_text = self.prompt_texts[self.current_voice]
-        self.prompt_lang = self.prompt_langs[self.current_voice]
-
-    def _parse_filename(self, filename):
-        """Parse filename to extract language marker and prompt text"""
-        # Remove .wav extension
-        name = os.path.splitext(filename)[0]
-        
-        # Check for language marker at the start
-        lang = 'en'  # default language
-        prompt_text = name
-        
-        # Look for language markers like [ja], [en], etc.
-        if name.startswith('['):
-            end_bracket = name.find(']')
-            if end_bracket != -1:
-                lang = name[1:end_bracket].lower()
-                prompt_text = name[end_bracket + 1:].strip()
-        
-        return lang, prompt_text
+        if self.voice_files:  # Only set if we have any voices
+            self.current_voice = "leaf" if "leaf" in self.voice_files else next(iter(self.voice_files))
+            self.ref_audio_path = os.path.join(current_module_directory, "models", self.current_voice, self.voice_files[self.current_voice])
+            self.prompt_text = self.prompt_texts[self.current_voice]
+            self.prompt_lang = self.prompt_langs[self.current_voice]
 
     def _update_voice_files(self):
         """Update voice files and prompt texts from the models directory"""
@@ -66,15 +57,22 @@ class GptSovits():
         for voice_dir in os.listdir(models_dir):
             voice_path = os.path.join(models_dir, voice_dir)
             if os.path.isdir(voice_path):
-                # Find the first .wav file in the directory
-                for file in os.listdir(voice_path):
-                    if file.endswith('.wav'):
-                        new_voice_files[voice_dir] = file
-                        # Parse filename for language and prompt text
-                        lang, prompt = self._parse_filename(file)
-                        new_prompt_texts[voice_dir] = prompt
-                        new_prompt_langs[voice_dir] = lang
-                        break
+                # Look for metadata.json
+                metadata_path = os.path.join(voice_path, "metadata.json")
+                if os.path.exists(metadata_path):
+                    try:
+                        import json
+                        with open(metadata_path, 'r', encoding='utf-8') as f:
+                            metadata = json.load(f)
+                            
+                        audio_file = metadata.get('audio_file')
+                        if audio_file and os.path.exists(os.path.join(voice_path, audio_file)):
+                            new_voice_files[voice_dir] = audio_file
+                            new_prompt_texts[voice_dir] = metadata.get('reference_text', '')
+                            new_prompt_langs[voice_dir] = metadata.get('language', 'en')
+                    except Exception as e:
+                        logger.error(f"Error reading metadata for voice {voice_dir}: {e}")
+                        continue
 
         # Update state
         self.voice_files = new_voice_files
@@ -113,8 +111,12 @@ class GptSovits():
 
     def synthesize(self, text):
         self._update_voice_files()  # Update voice files before synthesis
+        
+        if not self.current_voice:
+            raise ValueError("No voice models available. Please upload a voice model first.")
+            
         if not self.ref_audio_path or not os.path.exists(self.ref_audio_path):
-            raise ValueError("No valid reference audio file available")
+            raise ValueError(f"Reference audio file not found for voice '{self.current_voice}'")
         
         req = {
             "text": text,
@@ -191,13 +193,16 @@ class GptSovits():
             voice_dir = os.path.join(current_module_directory, "models", name)
             os.makedirs(voice_dir, exist_ok=True)
             
+            # Save audio file with a simple name
+            audio_file = "reference.wav"
+            wav_path = os.path.join(voice_dir, audio_file)
+            
             # Save audio file
             audio_buffer = BytesIO(reference_audio)
             
             # Convert to wav if needed using soundfile
             try:
                 data, samplerate = sf.read(audio_buffer)
-                wav_path = os.path.join(voice_dir, f"[{reference_language}]{reference_text}.wav")
                 sf.write(wav_path, data, samplerate)
             except Exception as e:
                 # If soundfile fails, try ffmpeg conversion
@@ -221,7 +226,7 @@ class GptSovits():
             metadata = {
                 "reference_text": reference_text,
                 "language": reference_language,
-                "audio_file": os.path.basename(wav_path)
+                "audio_file": audio_file
             }
             
             metadata_path = os.path.join(voice_dir, "metadata.json")

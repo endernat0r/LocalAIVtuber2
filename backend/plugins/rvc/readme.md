@@ -1,7 +1,6 @@
 ```
-python -m venv venv
-.\venv\Scripts\activate
-pip install uv
-uv pip install -r .\requirements.txt
-uv pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv venv --python 3.9
+.venv\Scripts\activate
+uv pip install -r requirements.txt
+python .\rvc_server.py
 ```
