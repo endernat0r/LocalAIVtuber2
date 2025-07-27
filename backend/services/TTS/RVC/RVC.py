@@ -12,7 +12,7 @@ from .inferrvc import load_torchaudio, RVC
 from .edge_tts_voices import SUPPORTED_VOICES
 import torch
 from fairseq.data.dictionary import Dictionary
-
+import time
 
 current_module_directory = os.path.dirname(__file__)
 torch.serialization.add_safe_globals([Dictionary])
@@ -103,53 +103,52 @@ class RVCInference(BaseTTS):
             print(f"Error in TTS generation: {e}")
             return None
 
-    def synthesize(self, text: str) -> Optional[bytes]:
-        """Synthesize text to speech using Edge TTS and optionally RVC"""
+    def synthesize(self, text):
+
         text = self._preprocess_text(text)
-        wav_filename = asyncio.run(self._generate_tts_audio(text))
-        
-        if not wav_filename:
+        print(f'Outputting audio to {self.EDGE_TTS_OUTPUT_FILENAME}')
+        try:
+            communicate = edge_tts.Communicate(text, self.edge_tts_voice)
+            asyncio.run(communicate.save(self.EDGE_TTS_OUTPUT_FILENAME))
+            
+            # Load the MP3 file
+            audio = AudioSegment.from_mp3(self.EDGE_TTS_OUTPUT_FILENAME)
+
+            # Convert it to WAV format
+            wav_filename = self.EDGE_TTS_OUTPUT_FILENAME.replace('.mp3', '.wav')
+            audio.export(wav_filename, format='wav')
+            audio = AudioSegment.from_wav(wav_filename)
+            samples = np.array(audio.get_array_of_samples())
+        except Exception as e:
+            print(f"Error converting text {text} to audio: {e}")
             return None
 
-        try:
-            if self.use_rvc:
-                # Apply RVC processing
-                aud, sr = load_torchaudio(wav_filename)
-                processed_audio = self.model(
-                    aud, 
-                    f0_up_key=self.transpose,
-                    output_volume=RVC.MATCH_ORIGINAL, 
-                    index_rate=self.index_rate, 
-                    protect=self.protect
-                )
-                
-                # Convert to numpy and save
-                audio_np = processed_audio.cpu().numpy()
-                sf.write(self.RVC_OUTPUT_FILENAME, audio_np, 44100)
-                
-                # Convert to bytes
-                audio = AudioSegment.from_wav(self.RVC_OUTPUT_FILENAME)
-                buffer = io.BytesIO()
-                audio.export(buffer, format='wav')
-                return buffer.getvalue()
-            else:
-                # Return direct TTS output
-                audio = AudioSegment.from_wav(wav_filename)
-                buffer = io.BytesIO()
-                audio.export(buffer, format='wav')
-                return buffer.getvalue()
-                
-        except Exception as e:
-            print(f"Error in audio processing: {e}")
-            return None
-        finally:
-            # Cleanup temporary files
-            if os.path.exists(self.EDGE_TTS_OUTPUT_FILENAME):
-                os.remove(self.EDGE_TTS_OUTPUT_FILENAME)
-            if os.path.exists(wav_filename):
-                os.remove(wav_filename)
-            if os.path.exists(self.RVC_OUTPUT_FILENAME):
-                os.remove(self.RVC_OUTPUT_FILENAME)
+
+        if self.use_rvc:
+            start_time = time.time()
+            aud, sr = load_torchaudio(wav_filename)
+            print(f"load_torchaudio: {time.time() - start_time:.5f} seconds")
+
+            start_time = time.time()
+            paudio1 = self.model(aud, f0_up_key=self.transpose,
+                                output_volume=RVC.MATCH_ORIGINAL, index_rate=self.index_rate, protect=self.protect)
+            print(f"model processing: {time.time() - start_time:.5f} seconds")
+
+            start_time = time.time()
+            paudio1_cpu = paudio1.cpu().numpy()  # Move to CPU and convert to NumPy
+            #print(f"cpu and numpy conversion: {time.time() - start_time:.5f} seconds")
+
+            start_time = time.time()
+            sf.write(self.RVC_OUTPUT_FILENAME, paudio1_cpu, 44100)
+            #print(f"write audio: {time.time() - start_time:.5f} seconds")
+
+            start_time = time.time()
+            audio = AudioSegment.from_wav(self.RVC_OUTPUT_FILENAME)
+            buffer = io.BytesIO()
+            audio.export(buffer, format='wav')  # Export as WAV format
+            wav_bytes = buffer.getvalue()  # Get the byte value of the audio
+            #print(f"audio segment processing and export: {time.time() - start_time:.5f} seconds")
+        return wav_bytes
 
     def configure(self, **kwargs):
         """Configure RVC parameters"""
