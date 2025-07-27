@@ -4,50 +4,35 @@ import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ttsManager } from "@/lib/ttsManager";
 import { RVCProvider } from "@/lib/tts/rvcProvider";
-import { TTSVoice } from "@/lib/tts/gptsovitsProvider";
 
 export default function RvcSettings() {
-    const [rvcModels, setRvcModels] = useState<TTSVoice[]>([])
-    const [selectedRvcModel, setSelectedRvcModel] = useState<string | null>(null)
-    const [edgeModels, setEdgeModels] = useState<TTSVoice[]>([])
-    const [selectedEdgeModel, setSelectedEdgeModel] = useState<string | null>(null)
+    const [selectedRvcModel, setSelectedRvcModel] = useState<string | null>(null);
+    const [selectedEdgeModel, setSelectedEdgeModel] = useState<string | null>(null);
+    const [rvcModels, setRvcModels] = useState<string[]>([]);
+    const [edgeModels, setEdgeModels] = useState<string[]>([]);
     const provider = ttsManager.getCurrentProviderInstance() as RVCProvider;
 
     useEffect(() => {
-        fetchRvcModels()
-        fetchEdgeModels()
-    }, [])
+        // Initial state
+        setRvcModels(provider.getVoices());
+        setEdgeModels(provider.getEdgeVoices());
+        setSelectedRvcModel(provider.getCurrentVoice());
+        setSelectedEdgeModel(provider.getCurrentEdgeVoice());
 
-    const fetchRvcModels = async () => {
-        try {
-            const models = await provider.getVoices();
-            setRvcModels(models);
-            const currentModel = provider.getCurrentVoice();
-            if (currentModel) {
-                setSelectedRvcModel(currentModel);
-            }
-        } catch (error) {
-            console.error('Failed to fetch RVC models:', error);
-        }
-    }
+        // Subscribe to changes
+        const unsubscribe = provider.subscribe(() => {
+            setRvcModels(provider.getVoices());
+            setEdgeModels(provider.getEdgeVoices());
+            setSelectedRvcModel(provider.getCurrentVoice());
+            setSelectedEdgeModel(provider.getCurrentEdgeVoice());
+        });
 
-    const fetchEdgeModels = async () => {
-        try {
-            const models = await provider.getEdgeVoices();
-            setEdgeModels(models);
-            const currentEdgeVoice = provider.getCurrentEdgeVoice();
-            if (currentEdgeVoice) {
-                setSelectedEdgeModel(currentEdgeVoice);
-            }
-        } catch (error) {
-            console.error('Failed to fetch Edge TTS models:', error);
-        }
-    }
+        return unsubscribe;
+    }, [provider]);
 
     const handleRvcModelChange = async (modelName: string) => {
         try {
             await provider.setVoice(modelName);
-            setSelectedRvcModel(modelName);
         } catch (error) {
             console.error('Failed to load RVC model:', error);
         }
@@ -55,7 +40,6 @@ export default function RvcSettings() {
 
     const handleEdgeModelChange = (modelName: string) => {
         provider.setEdgeVoice(modelName);
-        setSelectedEdgeModel(modelName);
     }
 
     return (
@@ -72,8 +56,8 @@ export default function RvcSettings() {
                         </SelectTrigger>
                         <SelectContent>
                             {rvcModels.map((model) => (
-                                <SelectItem key={model.name} value={model.name}>
-                                    {model.displayName || model.name}
+                                <SelectItem key={model} value={model}>
+                                    {model}
                                 </SelectItem>
                             ))}
                         </SelectContent>
@@ -89,8 +73,8 @@ export default function RvcSettings() {
                         </SelectTrigger>
                         <SelectContent>
                             {edgeModels.map((model) => (
-                                <SelectItem key={model.name} value={model.name}>
-                                    {model.displayName || model.name}
+                                <SelectItem key={model} value={model}>
+                                    {model}
                                 </SelectItem>
                             ))}
                         </SelectContent>

@@ -5,13 +5,40 @@ export interface TTSVoice {
     displayName?: string;
 }
 
+type GPTSoVITSStateUpdateCallback = () => void;
+
 export class GPTSoVITSProvider extends BaseTTSProvider {
     private currentVoice: string | null = null;
+    private voices: TTSVoice[] = [];
+    private subscribers = new Set<GPTSoVITSStateUpdateCallback>();
 
-    async getVoices(): Promise<TTSVoice[]> {
+    constructor() {
+        super();
+        this.initialize();
+    }
+
+    private async initialize() {
+        await this.fetchVoices();
+    }
+
+    subscribe(callback: GPTSoVITSStateUpdateCallback): () => void {
+        this.subscribers.add(callback);
+        return () => this.subscribers.delete(callback);
+    }
+
+    private notifySubscribers() {
+        this.subscribers.forEach(callback => callback());
+    }
+
+    private async fetchVoices() {
         const response = await fetch('/api/tts/voices');
         const data = await response.json();
-        return data.voices.map((voice: string) => ({ name: voice }));
+        this.voices = data.voices.map((voice: string) => ({ name: voice }));
+        this.notifySubscribers();
+    }
+
+    getVoices(): TTSVoice[] {
+        return this.voices;
     }
 
     getCurrentVoice(): string | null {
@@ -33,6 +60,7 @@ export class GPTSoVITSProvider extends BaseTTSProvider {
         }
 
         this.currentVoice = voice;
+        this.notifySubscribers();
     }
 
     async generateAudio(text: string): Promise<Response> {

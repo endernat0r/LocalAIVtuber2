@@ -6,27 +6,27 @@ import { ttsManager } from "@/lib/ttsManager";
 import { GPTSoVITSProvider, TTSVoice } from "@/lib/tts/gptsovitsProvider";
 
 export default function GptSovitsSettings() {
-  const [voices, setVoices] = useState<TTSVoice[]>([])
-  const [selectedVoice, setSelectedVoice] = useState<string | null>(null)
+  const [voices, setVoices] = useState<TTSVoice[]>([]);
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const provider = ttsManager.getCurrentProviderInstance() as GPTSoVITSProvider;
 
   useEffect(() => {
-    fetchVoices()
-  }, [])
+    // Initial state
+    setVoices(provider.getVoices());
+    setSelectedVoice(provider.getCurrentVoice());
 
-  const fetchVoices = async () => {
-    const voices = await provider.getVoices();
-    setVoices(voices);
-    const currentVoice = provider.getCurrentVoice();
-    if (currentVoice) {
-      setSelectedVoice(currentVoice);
-    }
-  }
+    // Subscribe to changes
+    const unsubscribe = provider.subscribe(() => {
+      setVoices(provider.getVoices());
+      setSelectedVoice(provider.getCurrentVoice());
+    });
+
+    return unsubscribe;
+  }, [provider]);
 
   const handleVoiceChange = async (voice: string) => {
     try {
       await provider.setVoice(voice);
-      setSelectedVoice(voice);
     } catch (error) {
       console.error('Failed to change voice:', error);
     }

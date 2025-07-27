@@ -6,20 +6,54 @@ interface RVCModel {
     index_path: string | null;
 }
 
+type RVCStateUpdateCallback = () => void;
+
 export class RVCProvider extends BaseTTSProvider {
     private currentVoice: string | null = null;
     private currentEdgeVoice: string | null = null;
+    private voices: string[] = [];
+    private edgeVoices: string[] = [];
+    private subscribers = new Set<RVCStateUpdateCallback>();
 
-    async getVoices(): Promise<string[]> {
-        const response = await fetch('/api/rvc/models');
-        const data = await response.json();
-        return data.models.map((model: RVCModel) => model.name);
+    constructor() {
+        super();
+        this.initialize();
     }
 
-    async getEdgeVoices(): Promise<string[]> {
+    private async initialize() {
+        await this.fetchVoices();
+        await this.fetchEdgeVoices();
+    }
+
+    subscribe(callback: RVCStateUpdateCallback): () => void {
+        this.subscribers.add(callback);
+        return () => this.subscribers.delete(callback);
+    }
+
+    private notifySubscribers() {
+        this.subscribers.forEach(callback => callback());
+    }
+
+    private async fetchVoices() {
+        const response = await fetch('/api/rvc/models');
+        const data = await response.json();
+        this.voices = data.models.map((model: RVCModel) => model.name);
+        this.notifySubscribers();
+    }
+
+    private async fetchEdgeVoices() {
         const response = await fetch('/api/rvc/edge-models');
         const data = await response.json();
-        return data.models;
+        this.edgeVoices = data.models;
+        this.notifySubscribers();
+    }
+
+    getVoices(): string[] {
+        return this.voices;
+    }
+
+    getEdgeVoices(): string[] {
+        return this.edgeVoices;
     }
 
     getCurrentVoice(): string | null {
@@ -41,10 +75,12 @@ export class RVCProvider extends BaseTTSProvider {
         }
 
         this.currentVoice = voice;
+        this.notifySubscribers();
     }
 
     setEdgeVoice(voice: string): void {
         this.currentEdgeVoice = voice;
+        this.notifySubscribers();
     }
 
     async generateAudio(text: string): Promise<Response> {
