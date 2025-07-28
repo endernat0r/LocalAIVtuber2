@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 import time
 from services.lib.startup_progress import startup_progress
 # Track import time
@@ -46,12 +50,12 @@ rvc_server_port = 8001  # Different port from main server
 
 # Start RVC server during initialization
 rvc_dir = os.path.join(os.path.dirname(__file__), "plugins", "rvc")
-rvc_venv_dir = os.path.join(rvc_dir, ".venv")
+rvc_runtime_python = os.path.join(rvc_dir, "runtime", "python.exe")
 rvc_server_script = os.path.join(rvc_dir, "rvc_server.py")
 
 success, message = process_manager.start_server_process(
     name="RVC",
-    venv_dir=rvc_venv_dir,
+    python_path=rvc_runtime_python,
     script_path=rvc_server_script,
     port=rvc_server_port,
     cwd=rvc_dir

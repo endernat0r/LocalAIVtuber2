@@ -38,7 +38,7 @@ class ProcessManager:
     def start_server_process(
         self,
         name: str,
-        venv_dir: str,
+        python_path: str,
         script_path: str,
         port: int,
         ready_message: str = "Uvicorn running on",
@@ -47,12 +47,12 @@ class ProcessManager:
         env: Optional[Dict[str, str]] = None
     ) -> Tuple[bool, str]:
         """
-        Start a Python server process using a virtual environment.
+        Start a Python server process using a python.exe.
         
         Args:
             name: Name of the server process
-            venv_dir: Path to the virtual environment directory
-            script_path: Path to the Python script to run
+            python_path: Path to the virtual environment directory
+            script_path: Path to the python script to run
             port: Port the server will run on
             ready_message: Message that indicates the server is ready
             timeout: Maximum time to wait for server to be ready (seconds)
@@ -66,10 +66,7 @@ class ProcessManager:
         startup_progress.show_step(f"Starting {name} Server")
 
         try:
-            # Get the path to the venv python
-            venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
-            
-            if not os.path.exists(venv_python):
+            if not os.path.exists(python_path):
                 msg = f"{name} server startup failed - virtual environment not found"
                 startup_progress.complete_step(f"{msg} in {time.time() - start_time:.2f}s")
                 return False, msg
@@ -86,7 +83,7 @@ class ProcessManager:
             
             # Start the server process
             process = subprocess.Popen(
-                [venv_python, script_path],
+                [python_path, script_path],
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
