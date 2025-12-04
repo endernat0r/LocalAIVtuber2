@@ -6,3 +6,4 @@ venv
 *.exe
 settings.json
 *.tmp
+runtime

@@ -1,10 +1,23 @@
 {
-    "frontend.character.selectedLive2DModel": "/resource/live2D/models/akari_vts/akari.model3.json",
-    "frontend.character.selectedVRMModel": "/resource/VRM3D/models/\u751f\u99d2\u30df\u30eb_\u79c1\u670d.vrm",
+    "frontend.character.selectedLive2DModel": "/api/character/files/live2D/models/KITU17/KITU17.model3.json",
+    "frontend.character.selectedVRMModel": "/api/character/files/VRM3D/models/CamomeCamome.vrm",
     "llm.showMonitor": true,
     "llm.keep_model_loaded": true,
     "llm.model_filename": "conversational-7b-v0.4-q4_k_m.gguf",
-    "llm.system_prompt": "You are Aya.",
+    "llm.system_prompt": "",
     "llm.enableMemoryRetrieval": true,
-    "frontend.character.renderModel": true
+    "frontend.character.renderModel": true,
+    "tts.provider": "gpt-sovits",
+    "tts.voice": "leaf",
+    "frontend.character.live2D.xPosition": 46,
+    "frontend.character.live2D.yPosition": 89,
+    "frontend.character.live2D.scale": 0.91,
+    "rvc.use-rvc": true,
+    "tts.gptsovits.voice": "leaf",
+    "tts.rvc.model": "MikuAI",
+    "tts.rvc.edge-tts-model": "ar-EG-SalmaNeural",
+    "rvc.f0-up-key": 5,
+    "frontend.character.3d2dSwitch": false,
+    "frontend.stream.setlist": [],
+    "stream.yt.videoid": ""
 }

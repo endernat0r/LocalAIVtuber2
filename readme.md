@@ -20,23 +20,24 @@ https://www.python.org/downloads/release/python-3100/
 ### 2. Install CUDA toolkit 12.4
 https://developer.nvidia.com/cuda-12-4-0-download-archive
 
-### 3. Create environemnt
+### 3. Create environment
 ```
 python -m venv venv
 .\venv\Scripts\activate
 ```
 
-### 3. Install dependencies
+### 4. Install dependencies
 ```
 pip install llama-cpp-python==0.2.90 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install fastapi uvicorn qdrant-client[fastembed] pyautogui  sounddevice silero-vad easyocr==1.7.2 mss numpy==1.23.4 pytchat soxr
-pip install -r services\TTS\GPTsovits\requirements.txt
+pip install -r backend\services\TTS\GPTsovits\requirements.txt
 ```
 
-### 4. Start program
+### 5. Start program
 ```
 .\venv\Scripts\activate
+cd backend
 python server.py
 ```
 

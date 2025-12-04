@@ -110,7 +110,7 @@ class GptSovits():
         return {"message": f"Voice changed to {voice_name}"}
 
     def synthesize(self, text):
-        self._update_voice_files()  # Update voice files before synthesis
+        # self._update_voice_files()  # Update voice files before synthesis
         
         if not self.current_voice:
             raise ValueError("No voice models available. Please upload a voice model first.")
@@ -125,10 +125,10 @@ class GptSovits():
             "aux_ref_audio_paths": [],
             "prompt_text": self.prompt_text,
             "prompt_lang": self.prompt_lang,
-            "top_k": 5,
+            "top_k": 3,
             "top_p": 1,
-            "temperature": 1,
-            "text_split_method": "cut0",
+            "temperature": 0.8,
+            "text_split_method": "cut5",
             "batch_size": int(1),
             "batch_threshold": float(0.75),
             "speed_factor": float(1.0),

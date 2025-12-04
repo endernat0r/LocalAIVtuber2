@@ -60,7 +60,23 @@ try:
         pyopenjtalk.update_global_jtalk_with_user_dict(USERDIC_BIN_PATH)   
 except Exception as e:
     # print(e)
-    import pyopenjtalk
+    try:
+        import pyopenjtalk
+    except ImportError:
+        import logging
+        logging.warning("pyopenjtalk not installed. Japanese TTS will not work.")
+        class pyopenjtalk:
+            OPEN_JTALK_DICT_DIR = b""
+            @staticmethod
+            def g2p(text): return ""
+            @staticmethod
+            def make_label(text): return []
+            @staticmethod
+            def run_frontend(text): return ""
+            @staticmethod
+            def mecab_dict_index(a, b): pass
+            @staticmethod
+            def update_global_jtalk_with_user_dict(a): pass
     # failed to load user dictionary, ignore.
     pass
 

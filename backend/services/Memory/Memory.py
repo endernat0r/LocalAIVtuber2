@@ -22,6 +22,14 @@ class Memory:
             self.client = QdrantClient(path=self.data_path)
         
         self.client.set_model("sentence-transformers/all-MiniLM-L6-v2")
+        
+        # Create collection if it doesn't exist
+        if not self.client.collection_exists(self.MESSAGE_COLLECTION_NAME):
+            self.client.create_collection(
+                collection_name=self.MESSAGE_COLLECTION_NAME,
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+            )
+            logger.info(f"Created collection: {self.MESSAGE_COLLECTION_NAME}")
     
     def check_collection_exists(self):
         if not self.client.collection_exists(self.MESSAGE_COLLECTION_NAME):

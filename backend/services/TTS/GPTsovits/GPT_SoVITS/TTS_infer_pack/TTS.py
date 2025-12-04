@@ -5,7 +5,9 @@ import random
 import traceback
 
 import torchaudio
-from tqdm import tqdm
+# from tqdm import tqdm
+def tqdm(iterable, *args, **kwargs):
+    return iterable
 now_dir = os.getcwd()
 sys.path.append(now_dir)
 import ffmpeg
@@ -255,9 +257,9 @@ class TTS_Config:
             self.device = torch.device("cpu")
 
         self.is_half = self.configs.get("is_half", False)
-        # if str(self.device) == "cpu" and self.is_half:
-        #     print(f"Warning: Half precision is not supported on CPU, set is_half to False.")
-        #     self.is_half = False
+        if str(self.device) == "cpu" and self.is_half:
+            print(f"Warning: Half precision is not supported on CPU, set is_half to False.")
+            self.is_half = False
 
         self.version = version
         self.t2s_weights_path = self.configs.get("t2s_weights_path", None)
@@ -626,7 +628,14 @@ class TTS:
             self.prompt_cache["refer_spec"][0] = spec
 
     def _get_ref_spec(self, ref_audio_path):
-        raw_audio, raw_sr = torchaudio.load(ref_audio_path)
+        # raw_audio, raw_sr = torchaudio.load(ref_audio_path)
+        import soundfile as sf
+        raw_audio, raw_sr = sf.read(ref_audio_path)
+        if len(raw_audio.shape) == 1:
+            raw_audio = raw_audio.reshape(-1, 1)
+        # soundfile returns (samples, channels), we need (channels, samples)
+        raw_audio = torch.from_numpy(raw_audio.T).float()
+
         raw_audio=raw_audio.to(self.configs.device).float()
         self.prompt_cache["raw_audio"] = raw_audio
         self.prompt_cache["raw_sr"] = raw_sr
@@ -1176,7 +1185,8 @@ class TTS:
             self.init_vits_weights(self.configs.vits_weights_path)
             raise e
         finally:
-            self.empty_cache()
+            # self.empty_cache()
+            pass
 
     def empty_cache(self):
         try:

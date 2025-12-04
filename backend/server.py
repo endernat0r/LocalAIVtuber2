@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 import time
 from services.lib.startup_progress import startup_progress
 # Track import time
@@ -46,12 +50,12 @@ rvc_server_port = 8001  # Different port from main server
 
 # Start RVC server during initialization
 rvc_dir = os.path.join(os.path.dirname(__file__), "plugins", "rvc")
-rvc_venv_dir = os.path.join(rvc_dir, ".venv")
+rvc_runtime_python = os.path.join(rvc_dir, "runtime", "python.exe")
 rvc_server_script = os.path.join(rvc_dir, "rvc_server.py")
 
 success, message = process_manager.start_server_process(
     name="RVC",
-    venv_dir=rvc_venv_dir,
+    python_path=rvc_runtime_python,
     script_path=rvc_server_script,
     port=rvc_server_port,
     cwd=rvc_dir
@@ -68,6 +72,15 @@ app.mount("/resource", StaticFiles(directory="../frontend/dist/resource"), name=
 # Initialize Services
 start_time = time.time()
 startup_progress.show_step("Loading AI Services")
+
+# Check CUDA availability
+import torch
+if torch.cuda.is_available():
+    logger.info(f"CUDA is available. Device count: {torch.cuda.device_count()}")
+    logger.info(f"Current device: {torch.cuda.get_device_name(0)}")
+else:
+    logger.warning("CUDA is NOT available. Running on CPU. This will be slow.")
+
 voice_input:VoiceInput = VoiceInput()
 llm:LLM = LLM()
 memory:Memory = Memory()
@@ -465,15 +478,15 @@ async def download_model_file(download_id: str, url: str, target_path: str):
                         })
                 
                 # Move temp file to final location
-                if os.path.exists(target_path):
-                    os.remove(target_path)
-                os.rename(temp_path, target_path)
+                if os.path.exists(target_file_path):
+                    os.remove(target_file_path)
+                os.rename(temp_path, target_file_path)
                 
                 # Mark as completed
                 download_progress[download_id]['status'] = 'completed'
                 download_progress[download_id]['progress'] = 100
                 
-                logger.info(f"Model download completed: {target_path}")
+                logger.info(f"Model download completed: {target_file_path}")
                 
                 # Refresh model list to update file existence status
                 llm._load_available_models()
@@ -484,7 +497,7 @@ async def download_model_file(download_id: str, url: str, target_path: str):
         download_progress[download_id]['error'] = str(e)
         
         # Clean up temp file if it exists
-        temp_path = target_path + '.tmp'
+        temp_path = target_file_path + '.tmp'
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
@@ -626,8 +639,17 @@ async def change_voice(request: ChangeVoiceRequest):
 
 @app.post("/api/tts")
 async def get_audio(request: TTSRequest):
-    response = tts.synthesize(request.text)
-    return Response(response, media_type="audio/wav")
+    # Run TTS in a separate thread to avoid blocking the event loop
+    loop = asyncio.get_event_loop()
+    try:
+        response = await loop.run_in_executor(None, lambda: tts.synthesize(request.text))
+        
+        if isinstance(response, dict):
+            return JSONResponse(status_code=500, content=response)
+        return Response(response, media_type="audio/wav")
+    except Exception as e:
+        logger.error(f"Error during TTS generation: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": "TTS generation failed"})
 
 @app.post("/api/tts/upload")
 async def upload_voice(
