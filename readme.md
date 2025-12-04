@@ -92,3 +92,7 @@ Open a terminal any where and run
 pip install nltk
 python -m nltk.downloader -d C:\nltk_data all
 ```
+
+
+
+Endernat0r welcomes you
